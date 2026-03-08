@@ -1,0 +1,64 @@
+:root {
+  --imt-border-color: #94a3b8;
+}
+
+.imt-target-block {
+  border: 1px dashed var(--imt-border-color) !important;
+  border-radius: 0 !important;
+  padding: 6px;
+  margin-top: 4px;
+  display: block;
+  font-size: inherit;
+  line-height: inherit;
+  color: inherit;
+}
+
+.imt-target-inline {
+  border: 1px dashed var(--imt-border-color) !important;
+  border-radius: 0 !important;
+  padding: 2px 4px;
+  font-size: inherit;
+  line-height: inherit;
+  color: inherit;
+}
+
+.imt-paragraph {
+  outline: 2px solid rgba(59, 130, 246, 0.3);
+  outline-offset: 2px;
+  transition: outline-color 0.15s;
+}
+
+.imt-loading::after {
+  content: "";
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  margin-left: 6px;
+  border: 2px solid rgba(0, 0, 0, 0.15);
+  border-top-color: rgba(0, 0, 0, 0.5);
+  border-left-color: rgba(0, 0, 0, 0.5);
+  border-radius: 50%;
+  vertical-align: middle;
+  animation: imt-spin 0.6s linear infinite;
+}
+
+@media (prefers-color-scheme: dark) {
+  .imt-loading::after {
+    border-color: rgba(255, 255, 255, 0.2);
+    border-top-color: rgba(255, 255, 255, 0.7);
+    border-left-color: rgba(255, 255, 255, 0.7);
+  }
+}
+
+@keyframes imt-spin {
+  to { transform: rotate(360deg); }
+}
+
+.imt-error {
+  color: #ef4444;
+  font-size: 0.85em;
+  border: 1px dashed #ef4444 !important;
+  padding: 4px 8px;
+  margin-top: 4px;
+  display: block;
+}

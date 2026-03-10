@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "Translate Minimal",
   "version": "1.0.0",
-  "description": "Ctrl+hover to translate paragraphs. Supports Google, Microsoft, Ollama.",
+  "description": "Ctrl+hover to translate paragraphs. Supports Google, Microsoft, Ollama, Poe.",
   "icons": {
     "32": "icons/32.png",
     "48": "icons/48.png",
@@ -27,7 +27,8 @@
     "https://edge.microsoft.com/*",
     "https://api-edge.cognitive.microsofttranslator.com/*",
     "http://localhost:11434/*",
-    "http://127.0.0.1:11434/*"
+    "http://127.0.0.1:11434/*",
+    "https://api.poe.com/*"
   ],
   "background": {
     "service_worker": "background.js"

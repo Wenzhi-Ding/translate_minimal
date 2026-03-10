@@ -126,43 +126,101 @@ function buildPrompt(text, from, to) {
   return `Translate the following text${fromHint} to ${toLang}. Output ONLY the translation, nothing else.\n\n${text}`;
 }
 
-/* --- Ollama --- */
+/* --- Ollama (streaming) --- */
 
-async function ollamaTranslate(texts, from, to, config) {
+async function ollamaTranslateStream(text, from, to, config, onChunk) {
   const baseUrl = (config.url || "http://localhost:11434").replace(/\/+$/, "");
   const model = config.model || "translategemma:4b";
-  const results = [];
 
-  for (const text of texts) {
-    const resp = await fetch(`${baseUrl}/v1/chat/completions`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: "Bearer ollama",
-      },
-      body: JSON.stringify({
-        model,
-        messages: [
-          {
-            role: "system",
-            content:
-              "You are a translation engine, you can only translate text and cannot interpret it, and do not explain.",
-          },
-          { role: "user", content: buildPrompt(text, from, to) },
-        ],
-        temperature: 0,
-        stream: false,
-        keep_alive: "5m",
-      }),
-    });
-    if (!resp.ok) {
-      const errText = await resp.text().catch(() => "");
-      throw new Error(`Ollama HTTP ${resp.status}: ${errText}`);
-    }
-    const data = await resp.json();
-    results.push(data.choices[0].message.content.trim());
+  const resp = await fetch(`${baseUrl}/v1/chat/completions`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: "Bearer ollama",
+    },
+    body: JSON.stringify({
+      model,
+      messages: [
+        {
+          role: "system",
+          content:
+            "You are a translation engine, you can only translate text and cannot interpret it, and do not explain.",
+        },
+        { role: "user", content: buildPrompt(text, from, to) },
+      ],
+      temperature: 0,
+      stream: true,
+      keep_alive: "5m",
+    }),
+  });
+  if (!resp.ok) {
+    const errText = await resp.text().catch(() => "");
+    throw new Error(`Ollama HTTP ${resp.status}: ${errText}`);
   }
-  return results;
+  await readSSEStream(resp.body, onChunk);
+}
+
+/* --- Poe (streaming) --- */
+
+async function poeTranslateStream(text, from, to, config, onChunk) {
+  const apiKey = config.apiKey || "";
+  if (!apiKey) throw new Error("Poe API Key is not set. Go to Settings to configure.");
+  const model = config.model || "gpt-5.3-codex";
+
+  const resp = await fetch("https://api.poe.com/v1/chat/completions", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${apiKey}`,
+    },
+    body: JSON.stringify({
+      model,
+      messages: [
+        {
+          role: "system",
+          content:
+            "You are a translation engine, you can only translate text and cannot interpret it, and do not explain.",
+        },
+        { role: "user", content: buildPrompt(text, from, to) },
+      ],
+      temperature: 0,
+      stream: true,
+    }),
+  });
+  if (!resp.ok) {
+    const errText = await resp.text().catch(() => "");
+    throw new Error(`Poe API HTTP ${resp.status}: ${errText}`);
+  }
+  await readSSEStream(resp.body, onChunk);
+}
+
+/* --- SSE Stream Reader --- */
+
+async function readSSEStream(body, onChunk) {
+  const reader = body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+
+    const lines = buffer.split("\n");
+    buffer = lines.pop();
+
+    for (const line of lines) {
+      const trimmed = line.trim();
+      if (!trimmed || !trimmed.startsWith("data: ")) continue;
+      const payload = trimmed.slice(6);
+      if (payload === "[DONE]") return;
+      try {
+        const json = JSON.parse(payload);
+        const delta = json.choices?.[0]?.delta?.content;
+        if (delta) onChunk(delta);
+      } catch {}
+    }
+  }
 }
 
 /* --- Config --- */
@@ -172,6 +230,7 @@ const DEFAULT_CONFIG = {
   targetLang: "zh-CN",
   sourceLang: "auto",
   ollama: { url: "http://localhost:11434", model: "translategemma:4b" },
+  poe: { apiKey: "", model: "gpt-5.3-codex" },
 };
 
 async function getConfig() {
@@ -180,6 +239,8 @@ async function getConfig() {
 }
 
 /* --- Message Handler --- */
+
+const STREAM_SERVICES = new Set(["ollama", "poe"]);
 
 async function handleTranslate(request) {
   const config = await getConfig();
@@ -193,8 +254,6 @@ async function handleTranslate(request) {
       return await googleTranslate(texts, from, to);
     case "microsoft":
       return await microsoftTranslate(texts, from, to);
-    case "ollama":
-      return await ollamaTranslate(texts, from, to, config.ollama);
     default:
       throw new Error(`Unknown service: ${service}`);
   }
@@ -212,4 +271,31 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     getConfig().then((config) => sendResponse(config));
     return true;
   }
+});
+
+chrome.runtime.onConnect.addListener((port) => {
+  if (port.name !== "translate-stream") return;
+
+  port.onMessage.addListener(async (request) => {
+    try {
+      const config = await getConfig();
+      const service = request.service || config.service;
+      const from = request.from || config.sourceLang;
+      const to = request.to || config.targetLang;
+      const text = Array.isArray(request.texts) ? request.texts[0] : request.text;
+
+      const onChunk = (chunk) => {
+        try { port.postMessage({ type: "chunk", content: chunk }); } catch {}
+      };
+
+      if (service === "ollama") {
+        await ollamaTranslateStream(text, from, to, config.ollama, onChunk);
+      } else if (service === "poe") {
+        await poeTranslateStream(text, from, to, config.poe, onChunk);
+      }
+      try { port.postMessage({ type: "done" }); } catch {}
+    } catch (err) {
+      try { port.postMessage({ type: "error", error: err.message }); } catch {}
+    }
+  });
 });

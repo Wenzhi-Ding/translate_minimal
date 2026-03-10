@@ -3,12 +3,17 @@ document.addEventListener("DOMContentLoaded", async () => {
   const ollamaModelEl = document.getElementById("ollamaModel");
   const ollamaRefreshBtn = document.getElementById("ollamaRefresh");
   const ollamaHelp = document.getElementById("ollamaModelHelp");
+  const poeApiKeyEl = document.getElementById("poeApiKey");
+  const poeModelEl = document.getElementById("poeModel");
   const toast = document.getElementById("toast");
 
   const { translateConfig = {} } = await chrome.storage.sync.get("translateConfig");
   const ol = translateConfig.ollama || {};
+  const po = translateConfig.poe || {};
 
   ollamaUrlEl.value = ol.url || "http://localhost:11434";
+  poeApiKeyEl.value = po.apiKey || "";
+  poeModelEl.value = po.model || "gpt-5.3-codex";
 
   const savedModel = ol.model || "translategemma:4b";
 
@@ -70,6 +75,10 @@ document.addEventListener("DOMContentLoaded", async () => {
         url: ollamaUrlEl.value.trim() || "http://localhost:11434",
         model: ollamaModelEl.value || "translategemma:4b",
       };
+      current.poe = {
+        apiKey: poeApiKeyEl.value.trim(),
+        model: poeModelEl.value.trim() || "gpt-5.3-codex",
+      };
       await chrome.storage.sync.set({ translateConfig: current });
       toast.classList.add("show");
       setTimeout(() => toast.classList.remove("show"), 1500);
@@ -82,4 +91,6 @@ document.addEventListener("DOMContentLoaded", async () => {
     ollamaUrlEl._refreshTimer = setTimeout(fetchOllamaModels, 800);
   });
   ollamaModelEl.addEventListener("change", save);
+  poeApiKeyEl.addEventListener("input", save);
+  poeModelEl.addEventListener("input", save);
 });

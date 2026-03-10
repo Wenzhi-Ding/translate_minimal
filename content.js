@@ -68,6 +68,8 @@
     return null;
   }
 
+  const STREAM_SERVICES = new Set(["ollama", "poe"]);
+
   function translateElement(el) {
     if (!el || el.getAttribute(TRANSLATED_ATTR)) return;
     el.setAttribute(TRANSLATED_ATTR, "pending");
@@ -85,6 +87,59 @@
     loadingEl.textContent = " ";
     el.appendChild(loadingEl);
 
+    chrome.runtime.sendMessage({ action: "getConfig" }, (config) => {
+      if (chrome.runtime.lastError || !config) {
+        loadingEl.remove();
+        showError(el, chrome.runtime.lastError?.message || "Cannot get config");
+        return;
+      }
+
+      const service = config.service || "google";
+
+      if (STREAM_SERVICES.has(service)) {
+        translateStream(el, loadingEl, sourceText, service);
+      } else {
+        translateNonStream(el, loadingEl, sourceText);
+      }
+    });
+  }
+
+  function translateStream(el, loadingEl, sourceText) {
+    const port = chrome.runtime.connect({ name: "translate-stream" });
+    let accumulated = "";
+
+    port.onMessage.addListener((msg) => {
+      if (msg.type === "chunk") {
+        accumulated += msg.content;
+        loadingEl.textContent = accumulated;
+        loadingEl.classList.remove("imt-loading");
+      } else if (msg.type === "done") {
+        if (!accumulated) {
+          loadingEl.remove();
+          showError(el, "Empty translation result");
+        } else {
+          loadingEl.textContent = accumulated.trim();
+          el.setAttribute(TRANSLATED_ATTR, "done");
+        }
+        port.disconnect();
+      } else if (msg.type === "error") {
+        loadingEl.remove();
+        showError(el, msg.error);
+        port.disconnect();
+      }
+    });
+
+    port.onDisconnect.addListener(() => {
+      if (el.getAttribute(TRANSLATED_ATTR) === "pending" && !accumulated) {
+        loadingEl.remove();
+        showError(el, "Connection lost");
+      }
+    });
+
+    port.postMessage({ action: "translate", texts: [sourceText] });
+  }
+
+  function translateNonStream(el, loadingEl, sourceText) {
     chrome.runtime.sendMessage(
       { action: "translate", texts: [sourceText] },
       (response) => {
@@ -129,11 +184,28 @@
     mouseY = e.clientY;
   });
 
+  let ctrlCombo = false;
+
   document.addEventListener("keydown", (e) => {
-    if (e.key !== "Control" || e.repeat) return;
+    if (e.key === "Control") {
+      if (!e.repeat) ctrlCombo = false;
+      return;
+    }
+    if (e.ctrlKey || e.metaKey) ctrlCombo = true;
+  });
+
+  document.addEventListener("keyup", (e) => {
+    if (e.key !== "Control" || ctrlCombo) return;
 
     const target = document.elementFromPoint(mouseX, mouseY);
     if (!target) return;
+
+    const translated = target.closest(`[${TRANSLATED_ATTR}="done"]`);
+    if (translated) {
+      translated.querySelectorAll(`[${TRANSLATION_TAG}]`).forEach((el) => el.remove());
+      translated.removeAttribute(TRANSLATED_ATTR);
+      return;
+    }
 
     const paragraph = findParagraph(target);
     if (paragraph && isVisible(paragraph)) {

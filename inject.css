@@ -2,6 +2,15 @@
   --imt-border-color: #94a3b8;
 }
 
+[data-imt-translated] {
+  -webkit-line-clamp: unset !important;
+  -webkit-box-orient: unset !important;
+  display: block !important;
+  overflow: visible !important;
+  text-overflow: unset !important;
+  max-height: none !important;
+}
+
 .imt-target-block {
   border: 1px dashed var(--imt-border-color) !important;
   border-radius: 0 !important;

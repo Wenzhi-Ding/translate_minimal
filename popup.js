@@ -11,12 +11,12 @@ document.addEventListener("DOMContentLoaded", async () => {
   sourceEl.value = translateConfig.sourceLang || "auto";
 
   function save() {
-    const config = {
-      service: serviceEl.value,
-      targetLang: targetEl.value,
-      sourceLang: sourceEl.value,
-    };
-    chrome.storage.sync.set({ translateConfig: config });
+    chrome.storage.sync.get("translateConfig", ({ translateConfig: current = {} }) => {
+      current.service = serviceEl.value;
+      current.targetLang = targetEl.value;
+      current.sourceLang = sourceEl.value;
+      chrome.storage.sync.set({ translateConfig: current });
+    });
   }
 
   serviceEl.addEventListener("change", save);
